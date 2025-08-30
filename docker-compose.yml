@@ -17,8 +17,8 @@ services:
       - "53:53/tcp" # DNS tcp port is used as fallback for longer dns messages
       - "53:53/udp" # DNS port
     volumes:
-      - "~/docker/volumes/pihole/pihole:/etc/pihole/"
-      - "~/docker/volumes/pihole/dnsmasq.d:/etc/dnsmasq.d/"
+      - "/home/psn/data/pihole/pihole:/etc/pihole/"
+      - "/home/psn/data/pihole/dnsmasq.d:/etc/dnsmasq.d/"
     environment:
       FTLCONF_webserver_api_password: ${WEBPASSWORD}
       FTLCONF_LOCAL_IPV4: ${HOST_IP_V4_ADDRESS} # <-- match ipv4_address of host

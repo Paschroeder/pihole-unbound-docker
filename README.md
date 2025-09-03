@@ -1,6 +1,146 @@
 # Why another fork
 This is just an version with the newest pihole and unbound versions with all the adaption of the env vars which was changing after pihole 2024.07.x
 
+# Homelab DNS Service Setup
+
+This guide explains how to set up Pi-hole and Unbound DNS services to run automatically as a system service on your homelab server.
+
+## Overview
+
+We created a systemd service that automatically starts your Docker Compose DNS stack (Pi-hole + Unbound) at boot time, with proper user separation and deployment workflow.
+
+## Directory Structure
+
+```
+/home/<user>/repos/homelab-config/dns/    # Git repository (development)
+├── docker-compose.yml
+├── .env
+
+/home/homelab/dns/                    # Production deployment
+├── docker-compose.yml                # Copied from repo
+├── .env                              # Copied from repo  
+└── data/                             # Copied from repo
+    ├── pihole/
+    └── dnsmasq.d/
+```
+
+## User Setup
+
+1. **Create dedicated service user:**
+   ```bash
+   sudo useradd -r -s /bin/false -d /home/homelab homelab
+   sudo usermod -aG docker homelab
+   sudo mkdir -p /home/homelab/dns
+   sudo chown -R homelab:homelab /home/homelab
+   ```
+
+2. **Create data directories with proper ownership:**
+   ```bash
+   # Create the data structure
+   sudo mkdir -p /home/homelab/dns/data/{pihole,dnsmasq.d}
+   
+   # Set proper ownership (important for container permissions)
+   sudo chown -R homelab:homelab /home/homelab/dns/
+   
+   # Set appropriate permissions
+   sudo chmod -R 755 /home/homelab/dns/data/
+   ```
+
+3. **Allow <user> to deploy:**
+   ```bash
+   sudo usermod -a -G homelab <user>
+   ```
+
+## Systemd Service
+
+**Created:** `/etc/systemd/system/homelab-dns.service`
+
+```ini
+[Unit]
+Description=Homelab DNS Services (Pi-hole + Unbound)
+Requires=snap.docker.dockerd.service
+After=snap.docker.dockerd.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=homelab
+Group=docker
+WorkingDirectory=/home/homelab/dns
+ExecStartPre=/bin/bash -c 'until /snap/bin/docker info >/dev/null 2>&1; do echo "Waiting for Docker..."; sleep 2; done'
+ExecStart=/snap/bin/docker-compose up -d
+ExecStop=/snap/bin/docker-compose down
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Enable service:**
+```bash
+sudo systemctl enable homelab-dns.service
+sudo systemctl daemon-reload
+```
+
+## Deployment Script
+
+**Created:** `/home/<user>/scripts/deploy-dns.sh`
+
+```bash
+#!/bin/bash
+# Copy all files including .env (hidden files)
+sudo cp -r /home/<user>/repos/homelab-config/dns/. /home/homelab/dns/
+
+# Set proper ownership
+sudo chown -R homelab:homelab /home/homelab/dns/
+
+# Restart service
+sudo systemctl restart homelab-dns.service
+```
+
+**Make executable:**
+```bash
+chmod +x /home/<user>/scripts/deploy-dns.sh
+```
+
+## Docker Compose Configuration
+
+**Key points:**
+- Use relative paths for volumes: `./data/pihole/pihole:/etc/pihole/`
+- Environment variables in `.env` file
+- Restart policy: `restart: unless-stopped`
+
+## How It Works
+
+1. **Development:** Edit files in `/home/<user>/repos/homelab-config/dns/`
+2. **Deploy:** Run `./deploy-dns.sh` to copy to production
+3. **Auto-start:** Service starts automatically at boot
+4. **Management:** Use standard systemctl commands
+
+## Common Commands
+
+```bash
+# Deploy changes
+./deploy-dns.sh
+
+# Check service status
+sudo systemctl status homelab-dns.service
+
+# View logs
+journalctl -fu homelab-dns.service
+
+# Manual start/stop/restart
+sudo systemctl start homelab-dns.service
+sudo systemctl stop homelab-dns.service
+sudo systemctl restart homelab-dns.service
+
+# Check running containers
+docker ps
+```
+
 # Pi-hole & Unbound DNS Docker Setup
 
 This is a docker compose setup which starts a [Pi-hole](https://pi-hole.net/) and [nlnetlab's Unbound](https://nlnetlabs.nl/projects/unbound/about/) as upstream recursive DNS using official (or ready-to-use) images. The main idea here is to add security, [privacy](https://www.cloudflare.com/learning/dns/what-is-recursive-dns/) and have ad and malware protection, everything hosted locally.
